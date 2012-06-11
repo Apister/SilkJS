@@ -25,6 +25,11 @@
 #define		BUFSIZE			1024
 #define		PIPE_TIMEOUT	5000
 
+#ifdef WIN32
+	HANDLE	hPidArray[100];
+	WORD	wPidcnt = 0;
+#endif
+
 // TODO:
 // getcwd()
 // chdir()
@@ -32,10 +37,15 @@
 // atexit, on_exit
 // popen/exec/etc.
 
+//static JSVAL process_store_pid(JSARGS args) {
+//	Local<External>wrap = Local<External>::Cast(args[0]);
+//	PROCESS_INFORMATION *piProc = (PROCESS_INFORMATION *) wrap->Value();
+//}
+
 static JSVAL process_allInOne(JSARGS args) {
 	HANDLE				hPipe;
 	BOOL				ret = 0;
-	//HandleScope			scope;
+	HandleScope			scope;
 	PROCESS_INFORMATION piProc;
 	STARTUPINFO			siStartInfo;
 	WSAPROTOCOL_INFO	protInfo;
@@ -58,7 +68,7 @@ static JSVAL process_allInOne(JSARGS args) {
 
 
 	if ( hPipe == INVALID_HANDLE_VALUE ) {
-		return Integer::New(-1);
+		return Null();
 	}
 
 	GetStartupInfo(&siStartInfo);  
@@ -79,8 +89,10 @@ static JSVAL process_allInOne(JSARGS args) {
 						&siStartInfo,	/* lpsiStartInfo */ 
 						&piProc);  
 
+	printf("CreateProcess dwProcessId = %d\n", piProc.dwProcessId);
+
 	if ( ret == 0 ) {
-		return Integer::New(-1);
+		return Null();
 	}  
 
 	ret = WSADuplicateSocket(sock_client, piProc.dwProcessId, &protInfo);
@@ -111,22 +123,26 @@ static JSVAL process_allInOne(JSARGS args) {
 	CloseHandle(ol.hEvent);
 
 	if ( ret == 0 ) {
-		return Integer::New(-1);
+		return Null();
 	}
 
 	/* I write the socket descriptor to the named pipe */
 	if ( WriteFile(hPipe, &sock_client, sizeof(sock_client), &dwBytes, NULL) == 0 ) {
-		return Integer::New(-1);
+		return Null();
 	}
 
 	/* I write the protocol information structure to the named pipe */
 	if ( WriteFile(hPipe, &protInfo, sizeof(protInfo), &dwBytes, NULL) == 0 ) {
-		return Integer::New(-1);
+		return Null();
 	}
 
 	CloseHandle(hPipe);
 
-	return Undefined();
+	hPidArray[wPidcnt++] = piProc.hProcess;
+
+	//printf("Created process [%d] = %d\n", (wPidcnt-1), hPidArray[(wPidcnt-1)]);
+
+    return Integer::New(piProc.dwProcessId);
 }
 
 static JSVAL process_copyDescriptor(JSARGS args) {
@@ -138,6 +154,7 @@ static JSVAL process_copyDescriptor(JSARGS args) {
 	SOCKET sock_client	= args[1]->IntegerValue();
     Local<External>wrap = Local<External>::Cast(args[2]);
 	WSAPROTOCOL_INFO	*protInfo = (WSAPROTOCOL_INFO *) wrap->Value();
+
 printf("Connect to named pipe and write\r\n");
 	ol.hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
 
@@ -445,8 +462,41 @@ static JSVAL process_usleep (JSARGS args) {
 #ifdef WIN32
 // Again there is not a straight forward way of doing this so I'm going to punt for now.
 static JSVAL process_wait (JSARGS args) {
+	DWORD	dwCnt;
+	DWORD	lpExitCode;
+    HANDLE	h;
+
+	//printf("WaitForMultipleObjects = %d\n", wPidcnt);
+
+    dwCnt = WaitForMultipleObjects(wPidcnt, hPidArray, FALSE, INFINITE);
+
+	//printf("rez = %d\n", dwCnt);
+
+	//for(DWORD dwidx = 0; dwidx < wPidcnt; ++dwidx) { printf("B hPidArray[%d] = %d\n", dwidx, hPidArray[dwidx]); }
+	//printf("B wPidcnt = %d\n", wPidcnt);
+
+	// There could be more then one process that has had an event notification so we should check each one when it shuts down.
+	if (wPidcnt > 1)
+	{
+		memmove(&hPidArray[dwCnt], &hPidArray[dwCnt+1], (dwCnt)*sizeof(HANDLE));
+	}
+	wPidcnt--;
+
+	for(dwCnt = 0; dwCnt < wPidcnt; )
+	{
+		if (GetExitCodeProcess(hPidArray[dwCnt], &lpExitCode) != STILL_ACTIVE)
+		{
+			memmove(&hPidArray[dwCnt], &hPidArray[dwCnt+1], (dwCnt)*sizeof(HANDLE));
+			wPidcnt--;
+		} else ++dwCnt;
+	}
+	
+
+
+	//printf("A wPidcnt = %d\n", wPidcnt);
+	
     Handle<Object>o = Object::New();
-    o->Set(String::New("pid"), Integer::New(0));
+    o->Set(String::New("pid"), Integer::New(dwCnt));
     o->Set(String::New("status"), Integer::New(0));
     return o;
 }

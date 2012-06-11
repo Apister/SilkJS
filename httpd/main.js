@@ -27,8 +27,11 @@ include('httpd/request.js');
 include('httpd/response.js');
 include('httpd/child.js');
 
-function main() {
+function main() 
+{
     var debugMode = false;
+    var cldprc;
+    var children = {};
 
     // load any user provided JavaScripts
 	arguments.each(function(arg) {
@@ -67,32 +70,20 @@ function main() {
     //
     // ------> global.logfile = new LogFile(Config.logFile || '/httpd-silkjs.log');
 
-    var hpipe;
-    var piProc;
-    var protInfo;
-    //hpipe = process.createNamedPipe();
-    //piProc = process.createProcess();
-    //protInfo = net.duplicateSocket(piProc, serverSocket);
-    //process.copyDescriptor(hpipe, serverSocket, protInfo);
-//    process.allInOne(serverSocket);
 
-/*
     if (debugMode) {
 		while (1) {
 	        HttpChild.run(serverSocket, process.getpid());
 		}
     }
-*/
 
     print(' - main.js 8 : ' + Config.numChildren.toString() + '\r\n');
 
-
-    var children = {};
     for (var i=0; i<Config.numChildren; i++) 
     {
         //pid = process.fork();
-        process.allInOne(serverSocket);
-        /*
+        pid = process.allInOne(serverSocket);
+
         // --------> Here is where the new process starts
 
         if (pid == 0) {  // This will run when it's a child process.
@@ -105,30 +96,30 @@ function main() {
         else { // The process id of the child will be given in the parent process.
             children[pid] = true;
         }
-        */
     }
-
-/*
+   
     var logMessage = 'SilkJS HTTP running with ' + Config.numChildren + ' children on port ' + Config.port;
     if (Config.listenIp !== '0.0.0.0') {
         logMessage += ' on IP ' + Config.listenIp;
     }
-*/
 
 //    console.log('Silk running with ' + Config.numChildren + ' children on port ' + Config.port);
 //    logfile.write('Silk running with ' + Config.numChildren + ' children on port ' + Config.port + '\n');
 
-/*
     console.log(logMessage);
-    logfile.writeln(logMessage);
+    //logfile.writeln(logMessage);
     while (true) {
         var o = process.wait();
-        if (!children[o.pid]) {
-            console.log('********************** CHILD EXITED THAT IS NOT HTTP CHILD');
-            continue;
-        }
+
+//        if (!children[o.pid]) {
+//            console.log('********************** CHILD EXITED THAT IS NOT HTTP CHILD');
+//            continue;
+//        }
+
         delete children[o.pid];
-        pid = process.fork();
+//      pid = process.fork();
+        pid = process.allInOne(serverSocket);
+
         if (pid == 0) {
             HttpChild.run(serverSocket, process.getpid());
             process.exit(0);
@@ -140,6 +131,4 @@ function main() {
             children[pid] = true;
         }
     }
-*/
-
 }

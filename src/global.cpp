@@ -59,6 +59,7 @@ static Handle<Value> Log (const Arguments& args) {
 static Handle<Value> Print (const Arguments& args) {
     HandleScope handle_scope;
     String::AsciiValue str(args[0]);
+//{ FILE* fp = fopen("c:\\out.txt", "a+b"); fprintf(fp, "%s\r\n", *str); fclose(fp); }
     return Undefined();
 }
 
