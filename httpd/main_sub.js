@@ -5,6 +5,7 @@ print_r = require('builtin/print_r');
 
 console = require('console');
 fs = require('fs');
+sem = require('builtin/sem');
 LogFile = require('LogFile');
 net = require('builtin/net');
 process = require('builtin/process');

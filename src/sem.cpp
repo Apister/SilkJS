@@ -6,8 +6,41 @@
 
 #ifdef WIN32
 HANDLE hMutex;
+char   mName[] = "mutex: silkjs.syncronization.99j33029jh3uj3";
 #else
 static sem_t mutex;
+#endif
+
+#ifdef WIN32
+static JSVAL sem_createmutex(JSARGS args) {
+    HandleScope scope;
+
+	if ((hMutex = CreateMutexA(NULL, false, mName)) == NULL) {
+        perror("sem_open");
+        return False();
+	}
+    return True();
+}
+
+static JSVAL sem_open(JSARGS args) {
+    HandleScope scope;
+
+	if ((hMutex = OpenMutex(SYNCHRONIZE, TRUE, mName)) == NULL) {
+        perror("sem_open");
+        return False();
+	}
+    return True();
+}
+
+static JSVAL sem_waitsem(JSARGS args) {
+	WaitForSingleObject(hMutex, INFINITE); // Wait for ownership.
+	return Undefined();
+}
+
+static JSVAL sem_relesesem(JSARGS args) {
+	ReleaseMutex(hMutex);
+	return Undefined();
+}
 #endif
 
 static JSVAL sem_Init (JSARGS args) {
@@ -64,6 +97,11 @@ void init_sem_object () {
     sem->Set(String::New("destroy"), FunctionTemplate::New(sem_Destroy));
     sem->Set(String::New("wait"), FunctionTemplate::New(sem_Wait));
     sem->Set(String::New("post"), FunctionTemplate::New(sem_Post));
+
+    sem->Set(String::New("createM"), FunctionTemplate::New(sem_createmutex));
+    sem->Set(String::New("openM"), FunctionTemplate::New(sem_open));
+    sem->Set(String::New("waitM"), FunctionTemplate::New(sem_waitsem));
+    sem->Set(String::New("releaseM"), FunctionTemplate::New(sem_relesesem));
 
     builtinObject->Set(String::New("sem"), sem);
 }

@@ -30,14 +30,13 @@ req = (function() {
 		init: function(sock) {
 			req.start = new Date().getTime();
 			if (!stream) {
-    			stream = http.openStream(sock);
-            }
+				stream = http.openStream(sock);
+			}
 //			var raw = readHeaders(); // http.readHeaders(stream);
-print(' - request readheads begin\r\n');
-			var raw = http.readHeaders(stream);
-print(' - request readheads end\r\n');
-			if (raw == null) {
 
+			var raw = http.readHeaders(stream);
+
+			if (raw == null) {
 				return false;
 			}
 
@@ -45,7 +44,8 @@ print(' - request readheads end\r\n');
 			var first = lines.shift().split(/\s+/);
 
 			var headers = {};
-			lines.each(function(line) {
+			lines.each(function(line) 
+			{
 				var colon = line.indexOf(':');
 				var key = line.substr(0, colon);
 
@@ -68,7 +68,7 @@ print(' - request readheads end\r\n');
 			var uriParts = first[1].split('?');
 			var data = {};
 
-            req.queryParams = {};
+			req.queryParams = {};
 			if (uriParts[1]) {
 				uriParts[1].split('&').each(function(part) {
 					part = part.split('=');
@@ -81,7 +81,7 @@ print(' - request readheads end\r\n');
 			req.remote_addr = net.remote_addr();
 
 			// process cookies
-            req.cookies = {};
+			req.cookies = {};
 			if (headers['cookie']) {
 				headers['cookie'].split(/;\s*/).each(function(cookie) {
 					var cookieParts = cookie.split('=');
@@ -93,7 +93,8 @@ print(' - request readheads end\r\n');
 			var post = '';
 			var mimeParts = [];
 			var contentLength = headers['content-length'];
-			if (contentLength) {
+			if (contentLength) 
+			{
 				var contentType = headers['content-type'];
 				if (contentType && contentType.toLowerCase().indexOf('multipart/form-data') != -1) {
 					var boundary = contentType.replace(/^.*?boundary=/i, '');
@@ -102,12 +103,12 @@ print(' - request readheads end\r\n');
 					mimeParts.shift();
 					mimeParts.pop();
 
-					mimeParts.each(function(part) {
+					mimeParts.each(function(part) 
+					{
 						var lines = part.split('\r\n');
 						var disposition = lines[1].split(/;\s*/);
 						var name = disposition[1].replace(/name="(.*)"/, '$1');
 						if (disposition.length == 3) {
-
 							// file upload
 							data[name] = {
 								filename: disposition[2].replace(/filename="(.*)"/, '$1'),
@@ -118,17 +119,17 @@ print(' - request readheads end\r\n');
 							};
 						}
 						else {
-
-                            lines.shift(); lines.shift(); lines.shift();
-                            if (lines[lines.length-1] == '') {
-                                lines.pop();
-                            }
+							lines.shift(); lines.shift(); lines.shift();
+							if (lines[lines.length-1] == '') 
+							{
+							    lines.pop();
+							}
 							data[name] = lines.join('\n');
 						}
 					});
 				}
-				else {
-
+				else
+				{
 					post = http.readPost(stream, contentLength);
 					if (headers['content-type'].match(/^application\/x-www-form-urlencoded/i)) {
 						post.split('&').each(function(part) {
@@ -136,9 +137,10 @@ print(' - request readheads end\r\n');
 							data[part[0]] = decodeURIComponent(part[1].replace(/\+/gm, ' '));
 						});
 					}
-                    else {
-                        req.data.post = post;
-                    }
+					else
+					{
+					    req.data.post = post;
+					}
 				}
 			}
 			req.data = data;

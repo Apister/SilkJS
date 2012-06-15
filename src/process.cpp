@@ -14,6 +14,7 @@
  * Operating system man pages
  * 
  */
+
 #include "SilkJS.h"
 #include "v8.h"
 #ifndef WIN32
@@ -89,7 +90,7 @@ static JSVAL process_allInOne(JSARGS args) {
 						&siStartInfo,	/* lpsiStartInfo */ 
 						&piProc);  
 
-	printf("CreateProcess dwProcessId = %d\n", piProc.dwProcessId);
+//	printf("CreateProcess dwProcessId = %d\n", piProc.dwProcessId);
 
 	if ( ret == 0 ) {
 		return Null();
@@ -465,6 +466,7 @@ static JSVAL process_wait (JSARGS args) {
 	DWORD	dwCnt;
 	DWORD	lpExitCode;
     HANDLE	h;
+	DWORD	dwProsStoped = 0;
 
 	//printf("WaitForMultipleObjects = %d\n", wPidcnt);
 
@@ -478,6 +480,7 @@ static JSVAL process_wait (JSARGS args) {
 	// There could be more then one process that has had an event notification so we should check each one when it shuts down.
 	if (wPidcnt > 1)
 	{
+		++dwProsStoped;
 		memmove(&hPidArray[dwCnt], &hPidArray[dwCnt+1], (dwCnt)*sizeof(HANDLE));
 	}
 	wPidcnt--;
@@ -486,18 +489,17 @@ static JSVAL process_wait (JSARGS args) {
 	{
 		if (GetExitCodeProcess(hPidArray[dwCnt], &lpExitCode) != STILL_ACTIVE)
 		{
+			++dwProsStoped;
 			memmove(&hPidArray[dwCnt], &hPidArray[dwCnt+1], (dwCnt)*sizeof(HANDLE));
 			wPidcnt--;
 		} else ++dwCnt;
 	}
-	
-
 
 	//printf("A wPidcnt = %d\n", wPidcnt);
 	
     Handle<Object>o = Object::New();
     o->Set(String::New("pid"), Integer::New(dwCnt));
-    o->Set(String::New("status"), Integer::New(0));
+    o->Set(String::New("status"), Integer::New(dwProsStoped));
     return o;
 }
 #else

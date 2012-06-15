@@ -103,13 +103,13 @@ res = function() {
 			res.cookies[key] = cookie;
 		},
 		
-        unsetCookie: function(key) {
-            var now = new Date().getTime() / 1000;
-            var yesterday = now - 86400;
-            res.cookies[key] = {
-                expires: new Date(yesterday*1000).toGMTString()
-            };
-        },
+		unsetCookie: function(key) {
+		    var now = new Date().getTime() / 1000;
+		    var yesterday = now - 86400;
+		    res.cookies[key] = {
+			expires: new Date(yesterday*1000).toGMTString()
+		    };
+		},
         
 		setHeader: function(key, value) {
 			res.headers[key] = value;
@@ -141,10 +141,20 @@ res = function() {
 				});
 				out += 'Content-Type: ' + res.contentType + '\r\n';
 				out += 'Content-Length: ' + res.contentLength + '\r\n\r\n';
+				//out += 'Content-Length: ' + 95 + '\r\n\r\n';
 				try {
-                    net.cork(res.sock, true);
-print(' - sendHeaders ' + out + '\r\nLength - ' + out.length + 'res.sock - ' + res.sock + '\r\n');
+					net.cork(res.sock, true);
 					net.write(res.sock, out, out.length);
+					//var buf = 'HTTP/1.1 200 OK\r\nDate: Tue, 12 Jun 2012 15:54:17 GMT\r\nServer: Apache/2.2.3 (Red Hat)\r\n' +
+					//	'Last-Modified: Mon, 11 May 2009 00:45:24 GMT\r\nETag: \"2754a1b-20c-469984b2c9100\"\r\nAccept-Ranges: bytes\r\n' +
+					//	'Content-Length: 88\r\nContent-Type: text/html\r\n\r\n' +
+					//	'<html><head><title>SiteTest Home</title></head><body>THIS IS EVEN BETTER!!</body></html>';
+					//net.write(res.sock, buf, buf.length)
+	
+					//var buf = 'HTTP/1.1 200 OK\r\nDate: Tue, 12 Jun 2012 15:54:17 GMT\r\nServer: Apache/2.2.3 (Red Hat)\r\n' +
+					//	  'Last-Modified: Mon, 11 May 2009 00:45:24 GMT\r\nETag: \"2754a1b-20c-469984b2c9100\"\r\nAccept-Ranges: bytes\r\n' +
+					//	  'Content-Length: 95\r\nContent-Type: text/html\r\n\r\n';
+					//net.write(res.sock, buf, buf.length);
 				}
 				catch (e) {
 					throw new SilkException(e);
@@ -163,7 +173,7 @@ print(' - sendHeaders ' + out + '\r\nLength - ' + out.length + 'res.sock - ' + r
 		},
 		
 		writeln: function(s) {
-            res.write(s + '\n');
+			res.write(s + '\n');
 		},
 
 		write64: function(s) {
@@ -181,19 +191,33 @@ print(' - sendHeaders ' + out + '\r\nLength - ' + out.length + 'res.sock - ' + r
 			var size = fs.fileSize(fn);
 			res.headers['last-modified'] = new Date(modified*1000).toGMTString();
 			var ifModifiedSince = req.headers['if-modified-since'];
-			if (ifModifiedSince) {
+			if (ifModifiedSince)
+			{
 				ifModifiedSince = Date.parse(ifModifiedSince)/1000;
-				if (modified <= ifModifiedSince) {
+				if (modified <= ifModifiedSince)
+				{
 					res.status = 304;
 					res.stop();
 				}
 			}
 			res.contentLength = size;
-			try {
+			try
+			{
 				res.sendHeaders();
 				net.sendFile(res.sock, fn, 0, size); // (FileSystem.readfile64(fn));
+				//var buf = 'HTTP/1.1 200 OK\r\nDate: Tue, 12 Jun 2012 15:54:17 GMT\r\nServer: Apache/2.2.3 (Red Hat)\r\n' +
+				//	  'Last-Modified: Mon, 11 May 2009 00:45:24 GMT\r\nETag: \"2754a1b-20c-469984b2c9100\"\r\nAccept-Ranges: bytes\r\n' +
+				//	  'Content-Length: 88\r\nContent-Type: text/html\r\n\r\n' +
+				//	  '<html><head><title>SiteTest Home</title></head><body>THIS IS A GOOD PLACE!</body></html>';
+				//net.write(res.sock, buf, buf.length)
+				
+				//var buf = '<html><head><title>SiteTest Home</title></head><body>THIS IS A BODY TEST TESTING!</body></html>';
+				//net.write(res.sock, buf, buf.length)
+				//net.cork(res.sock, false);
 			}
-			catch (e) {
+			catch (e)
+			{
+				
 			}
 		},
 
@@ -206,12 +230,12 @@ print(' - sendHeaders ' + out + '\r\nLength - ' + out.length + 'res.sock - ' + r
 				net.writeBuffer(res.sock, buf);
 			}
 			else 
-            {
+			{
 				res.sendHeaders();
 			}
 			net.cork(res.sock, false);
-            buffer.reset(buf);
-        },
+			buffer.reset(buf);
+		},
 		
 		redirect: function(uri) {
 			res.status = 302;

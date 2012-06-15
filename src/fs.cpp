@@ -18,6 +18,8 @@
 #include "posixstat.h"
 #ifndef WIN32
 #include <sys/mman.h>
+#else
+#define BUFSIZE		4096
 #endif
 // TODO:
 
@@ -551,6 +553,16 @@ static JSVAL fs_isfile (JSARGS args) {
     HandleScope scope;
     String::Utf8Value path(args[0]->ToString());
 
+#ifdef WIN32
+	DWORD dwRet;
+
+	if ((dwRet = GetFileAttributes(*path)) != INVALID_FILE_ATTRIBUTES)
+	{
+		if (dwRet != FILE_ATTRIBUTE_DIRECTORY)
+			return scope.Close(True());
+	}
+	return scope.Close(False());
+#else
     struct stat buf;
     if (stat(*path, &buf)) {
         return scope.Close(False());
@@ -561,6 +573,7 @@ static JSVAL fs_isfile (JSARGS args) {
     else {
         return scope.Close(False());
     }
+#endif
 }
 
 /**
@@ -581,16 +594,29 @@ static JSVAL fs_isdir (JSARGS args) {
     HandleScope scope;
     String::Utf8Value path(args[0]->ToString());
 
+#ifdef WIN32
+	DWORD dwRet;
+
+	if ((dwRet = GetFileAttributes(*path)) != INVALID_FILE_ATTRIBUTES)
+	{
+		if (dwRet == FILE_ATTRIBUTE_DIRECTORY)
+			return scope.Close(True());
+	}
+	return scope.Close(False());
+#else
     struct stat buf;
+
     if (stat(*path, &buf)) {
         return scope.Close(False());
     }
+
     if (S_ISDIR(buf.st_mode)) {
         return scope.Close(True());
     }
     else {
         return scope.Close(False());
     }
+#endif
 }
 
 /**
@@ -611,11 +637,38 @@ static JSVAL fs_filesize (JSARGS args) {
     HandleScope scope;
     String::Utf8Value path(args[0]->ToString());
 
+#ifdef WIN32
+	HANDLE hFile;
+	FILETIME ftCreate, ftAccess, ftWrite;
+	SYSTEMTIME stUTC, stLocal, stUTC1, stLocal1, stUTC2, stLocal2;
+	// temporary storage for file sizes
+	DWORD dwFileSize;
+	DWORD dwFileType;
+
+	// Opening the existing file
+	hFile = CreateFile(*path, //file to open
+						GENERIC_READ, //open for reading
+						FILE_SHARE_READ, //share for reading
+						NULL, //default security
+						OPEN_EXISTING, //existing file only
+						FILE_ATTRIBUTE_NORMAL, //normal file
+						NULL); //no attribute template
+
+	if(hFile == INVALID_HANDLE_VALUE)
+	{
+		printf("Could not open %S file, error %d\n", *path, GetLastError());
+		return scope.Close(False());
+	}
+	dwFileSize = GetFileSize(hFile, NULL);
+	CloseHandle(hFile);
+	return scope.Close(Integer::New(dwFileSize));
+#else
     struct stat buf;
     if (stat(*path, &buf)) {
         return scope.Close(False());
     }
     return scope.Close(Integer::New(buf.st_size));
+#endif
 }
 
 /**
@@ -636,11 +689,58 @@ static JSVAL fs_mtime (JSARGS args) {
     HandleScope scope;
     String::Utf8Value path(args[0]->ToString());
 
+#ifdef WIN32
+	HANDLE hFile;
+	FILETIME ftCreate, ftAccess, ftWrite;
+	SYSTEMTIME stUTC, stLocal, stUTC1, stLocal1, stUTC2, stLocal2;
+	// temporary storage for file sizes
+	DWORD dwFileSize;
+	DWORD dwFileType;
+
+	// Opening the existing file
+	hFile = CreateFile(*path, //file to open
+						GENERIC_READ, //open for reading
+						FILE_SHARE_READ, //share for reading
+						NULL, //default security
+						OPEN_EXISTING, //existing file only
+						FILE_ATTRIBUTE_NORMAL, //normal file
+						NULL); //no attribute template
+
+	if(hFile == INVALID_HANDLE_VALUE)
+	{
+		printf("Could not open %S file, error %d\n", *path, GetLastError());
+		return scope.Close(False());
+	}
+	//else
+	//	printf("%S file opened successfully\n", *path);
+
+	//dwFileType = GetFileType(hFile);
+	//dwFileSize = GetFileSize(hFile, NULL);
+
+	//printf("%S size is %d bytes and file type is %d\n", *path, dwFileSize, dwFileType);
+
+	// Retrieve the file times for the file.
+	if (!GetFileTime(hFile, NULL, NULL, &ftWrite))
+	{
+		printf("Something wrong lol!\n");
+		return scope.Close(False());
+	}
+	CloseHandle(hFile);
+
+	ULONGLONG ull = reinterpret_cast<const ULONGLONG&>(ftWrite);
+	ull -= 116444736000000000;
+	ull /= 10000000;
+	//assert(ull / ULONG_MAX);
+	time_t t1 = static_cast<time_t>(ull);
+	return scope.Close(Integer::New(t1));
+
+#else
     struct stat buf;
     if (stat(*path, &buf)) {
         return scope.Close(False());
     }
     return scope.Close(Integer::New(buf.st_mtime));
+#endif
 }
 
 /**
@@ -763,16 +863,24 @@ static JSVAL fs_realpath (JSARGS args) {
     String::Utf8Value path(args[0]->ToString());
 
 #ifdef WIN32
-	char *absolutePath = NULL;
-	int isize = GetFullPathName(*path, 0, absolutePath, NULL);
-	absolutePath = (char*) calloc(isize+1, sizeof(char));
-	GetFullPathName(*path, isize, absolutePath, NULL);
+	char *absolutePath = (char*) calloc(BUFSIZE+1, sizeof(char));
+	int isize;
+	int ilength = strlen(*path);
+
+	if (GetFullPathName(*path, BUFSIZE, absolutePath, NULL) == 0)
+	{
+		free(absolutePath);
+		return scope.Close(False());
+	}
+	//int isize = GetFullPathName(*path, 0, absolutePath, NULL);
+	//absolutePath = (char*) calloc(isize+1, sizeof(char));
+	//GetFullPathName(*path, isize, absolutePath, NULL);
 #else
     char *absolutePath = realpath(*path, NULL);
-#endif
     if (!absolutePath) {
         return scope.Close(False());
     }
+#endif
     Handle<String>s = String::New(absolutePath);
     free(absolutePath);
     return scope.Close(s);
@@ -944,7 +1052,7 @@ static JSVAL fs_readfile (JSARGS args) {
     HandleScope scope;
 	OVERLAPPED olap;
     String::Utf8Value path(args[0]->ToString());
-    //int fd = open(*path, O_RDONLY);
+
 	HANDLE fh = CreateFile(*path, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
     if (fh == INVALID_HANDLE_VALUE) {
         return scope.Close(Null());
@@ -968,10 +1076,8 @@ static JSVAL fs_readfile (JSARGS args) {
 	ov.Internal = 0;
 	ov.InternalHigh = 0;
 
-    //flock(fd, LOCK_SH);
 	LockFileEx(fh, 0, 0, LI.LowPart, LI.HighPart, &ov);
 
-    //lseek(fd, 0, 0);
 	SetFilePointer(fh, 0, NULL, FILE_BEGIN);
     std::string s;
 
@@ -981,7 +1087,6 @@ static JSVAL fs_readfile (JSARGS args) {
     ssize_t count;
 	DWORD iread;
 
-    //while ((count = read(fd, buf, 1024))) {
 	while( ReadFile(fh, &buf, 1024, &iread, NULL) && (iread != 0) ) {
         s = s.append(buf, iread);
     }
@@ -991,9 +1096,8 @@ static JSVAL fs_readfile (JSARGS args) {
     //	}
     //flock(fd, LOCK_UN);
 	UnlockFileEx(fh, 0, LI.LowPart, LI.HighPart, &ov);
-    //close(fd);
-
 	CloseHandle(fh);
+
     Handle<String>ret = String::New(s.c_str(), s.size());
     return scope.Close(ret);
 }
@@ -1158,6 +1262,7 @@ static JSVAL fs_writefile (JSARGS args) {
     if (args.Length() > 3) {
         mode = args[3]->IntegerValue();
     }
+
     //int fd = open(*path, O_WRONLY | O_CREAT | O_TRUNC, mode);
 	HANDLE fh = CreateFile(*path, GENERIC_WRITE, FILE_SHARE_READ, NULL, TRUNCATE_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
     if (fh == NULL) {
@@ -1180,23 +1285,19 @@ static JSVAL fs_writefile (JSARGS args) {
 	ov.Pointer = NULL;
 	ov.Internal = 0;
 	ov.InternalHigh = 0;
-    //flock(fd, LOCK_EX);
 	LockFileEx(fh, 0, 0, LI.LowPart, LI.HighPart, &ov);
 
 	DWORD iwritten;
-    //if (write(fd, *data, size) != size) {
+    
 	WriteFile(fh, *data, size, &iwritten, NULL);
 	if (iwritten != size) {
-        //flock(fd, LOCK_UN);
 		UnlockFileEx(fh, 0, LI.LowPart, LI.HighPart, &ov);
-        //close(fd);
 		CloseHandle(fh);
         return scope.Close(False());
     }
-    //flock(fd, LOCK_UN);
 	UnlockFileEx(fh, 0, LI.LowPart, LI.HighPart, &ov);
-    //close(fd);
 	CloseHandle(fh);
+
     return scope.Close(True());
 }
 #else

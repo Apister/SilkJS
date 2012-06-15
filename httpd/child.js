@@ -183,6 +183,46 @@ HttpChild = (function() {
 		return coffee.script;
 	}
 	
+	var image_cache = {};
+	function sendCache(fn) {
+	    var cached = image_cache[fn];
+	    var mtime = fs.fileModified(fn);
+	    if (!cached || mtime > cached.mtime) {
+		var source = fs.readFile(fn);
+		var size = fs.fileSize(fn);
+		cached = {
+			source: source,
+			size: size
+		}
+		image_cache[fn] = cached;
+	    }
+	    //res.reset();	// so extra stuff sent with res.write() isn't sent'
+	    res.headers['last-modified'] = new Date(mtime*1000).toGMTString();
+	    var ifModifiedSince = req.headers['if-modified-since'];
+	    if (ifModifiedSince)
+	    {
+		    ifModifiedSince = Date.parse(ifModifiedSince)/1000;
+		    if (modified <= ifModifiedSince)
+		    {
+			    res.status = 304;
+			    res.stop();
+		    }
+	    }
+	    res.contentLength = cached.size;
+	    try
+	    {
+		    res.sendHeaders();
+		    net.write(res.sock, cached.source, cached.size)
+		    net.cork(res.sock, false);
+		    res.stop();
+	    }
+	    catch (e)
+	    {
+		    
+	    }
+	    
+	}
+	
 	function runCoffee(fn) {
 		var coffee = getCachedCoffee(fn);
 		v8.runScript(coffee);
@@ -270,24 +310,24 @@ HttpChild = (function() {
 	}
 	
 	var dynamicHandlers = {
-		sjs:	{ contentType: 'text/html',							handler: runSJS },
-		less:	{ contentType: 'text/css',		                    handler: runLess },
-		coffee:	{ contentType: 'text/html',		                    handler: runCoffee },
+		sjs:	{ contentType: 'text/html',			    handler: runSJS },
+		less:	{ contentType: 'text/css',		            handler: runLess },
+		coffee:	{ contentType: 'text/html',		            handler: runCoffee },
 		jst:	{ contentType: 'text/html',                         handler: runJst },
-		md:		{ contentType: 'text/html',                         handler: runMarkdown }
+		md:	{ contentType: 'text/html',                         handler: runMarkdown },
 //		ogg:	{ contentType: 'audio/ogg',                         handler: sendFile },
 //		mp3:	{ contentType: 'audio/mpeg3',                       handler: sendFile },
-//		png:	{ contentType: 'image/png',                         handler: sendFile },
-//		ico:	{ contentType: 'image/ico',                         handler: sendFile },
-//		gif:	{ contentType: 'image/gif',                         handler: sendFile },
-//		jpg:	{ contentType: 'image/jpeg'                  ,      handler: sendFile },
-//		jpeg:	{ contentType: 'image/jpeg',                        handler: sendFile },
-//		html:	{ contentType: 'text/html',                         handler: sendFile },
-//		htm:	{ contentType: 'text/html',                         handler: sendFile },
-//		js:		{ contentType: 'text/javascript',                   handler: sendFile },
-//		css:	{ contentType: 'text/css',                          handler: sendFile },
+		png:	{ contentType: 'image/png',                         handler: sendCache },
+		ico:	{ contentType: 'image/ico',                         handler: sendCache},
+		gif:	{ contentType: 'image/gif',                         handler: sendCache },
+		jpg:	{ contentType: 'image/jpeg'                  ,      handler: sendCache },
+		jpeg:	{ contentType: 'image/jpeg',                        handler: sendCache },
+		html:	{ contentType: 'text/html',                         handler: sendCache },
+		htm:	{ contentType: 'text/html',                         handler: sendCache },
+		js:	{ contentType: 'text/javascript',                   handler: sendCache },
+		css:	{ contentType: 'text/css',                          handler: sendFile }
 //		xml:	{ contentType: 'text/xml',                          handler: sendFile },
-//        swf:    { contentType: 'application/ x-shockwave-flash',    handler: sendFile }
+//        	swf:    { contentType: 'application/ x-shockwave-flash',    handler: sendFile }
 	};
 
 	function directoryIndex(fn) {
@@ -303,91 +343,101 @@ HttpChild = (function() {
 		});
 		return found;
 	}
-	function handleRequest() {
-		req.script_path = req.uri;
-		delete req.path_info;
-		var parts = req.uri.substr(1).split('/');
-        if (parts[0].length == 0) {
-            parts[0] = 'main';
-        }
-        var action = parts[0] + '_action';
-        if (global[action]) {
-            global[action]();
-            res.stop();
-        }
+	function handleRequest()
+	{
+	    req.script_path = req.uri;
+	    delete req.path_info;
+	    var parts = req.uri.substr(1).split('/');
 
-		var fnPath = Config.documentRoot + req.uri;
-		var fn = fs.realpath(fnPath);
-		if (!fn) {
-			fnPath = fs.realpath(Config.documentRoot + '/' + parts.shift());
-			if (!fs.realpath(fnPath)) {
-				notFound();
-			}
-			while (parts.length && fs.isDir(fnPath)) {
-				var newPath = fnPath,
-					part = parts.shift();
-				newPath += '/';
-				newPath += part;
-				newPath = fs.realpath(newPath);
-				if (!newPath) {
-					parts.unshift(part);
-					break;
-				}
-				fnPath = newPath;
-			}
-			fnPath = directoryIndex(fnPath);
-			if (!fnPath) {
-				notFound();
-			}
-			fn = fnPath;
-			req.path_info = parts.join('/');
-		}
-		if (fs.isDir(fn)) {
-			if (!req.uri.endsWith('/')) {
-//				log('redirect ' + req.uri + ' ' + fn + ' ' + fn.substr(fn.length-1, 1));
-				res.redirect(req.uri + '/');
-			}
-			var found = directoryIndex(fn);
-			if (found) {
-				fn = found;
-			}
-			else {
-				fn += '/index.jst';
-			}
-		}
-print(' - FN ' + fn + '\r\n');
-		if (!fs.isFile(fn)) {
-			// extra path info
+	    if (parts[0].length == 0) {
+		parts[0] = 'main';
+	    }
+	    
+	    var action = parts[0] + '_action';
+	    if (global[action]) {
+		global[action]();
+		res.stop();
+	    }
+
+	    var fnPath = Config.documentRoot + req.uri;
+	    
+	    var fn = fs.realpath(fnPath);
+	    
+	    if (!fn)
+	    {
+		fnPath = fs.realpath(Config.documentRoot + '/' + parts.shift());
+		if (!fs.realpath(fnPath)) {
 			notFound();
 		}
-print(' - FN Does Exist \r\n');
-
-		req.script_path = fn.replace(/index\..*$/, '').replace(fs.realpath(Config.documentRoot), '');
-		res.status = 200;
-        req.path = fn;
-		parts = fn.split('.');
-        var extension = parts.pop();
-        var handler = dynamicHandlers[extension.toLowerCase()];
-        if (handler) {
-            res.contentType = handler.contentType;
-            handler.handler(fn);
-        }
-        else {
-//            if (!fs.exists(fn)) {
-//                log('error: ' + fs.error());
-//            }
-            res.contentType = mimeTypes[extension] || 'text/plain';
-//          res.sendHeaders();
-            res.sendFile(fn);
-            res.stop();
-        }
+		while (parts.length && fs.isDir(fnPath)) {
+			var newPath = fnPath,
+			part = parts.shift();
+			newPath += '/';
+			newPath += part;
+			newPath = fs.realpath(newPath);
+			if (!newPath) {
+				parts.unshift(part);
+				break;
+			}
+			fnPath = newPath;
+		}
+		fnPath = directoryIndex(fnPath);
+		if (!fnPath) {
+			notFound();
+		}
+		fn = fnPath;
+		req.path_info = parts.join('/');
+	    }
+	    /*
+	    if (fs.isDir(fn))
+	    {
+		if (!req.uri.endsWith('/')) {
+		    //	log('redirect ' + req.uri + ' ' + fn + ' ' + fn.substr(fn.length-1, 1));
+		    res.redirect(req.uri + '/');
+		}
+		var found = directoryIndex(fn);
+		if (found) {
+			fn = found;
+		}
+		else {
+			fn += '/index.jst';
+		}
+	    }
+	    if (!fs.isFile(fn))
+	    {
+		// extra path info
+		print(' - FN Does Exist \r\n');
+		notFound();
+	    }
+	    */
+	    
+	    req.script_path = fn.replace(/index\..*$/, '').replace(fs.realpath(Config.documentRoot), '');
+	    res.status = 200;
+            req.path = fn;
+	    parts = fn.split('.');
+	    var extension = parts.pop();
+	    var handler = dynamicHandlers[extension.toLowerCase()];
+	    	    
+	    //fs.writeFile('c:\\out' + gindex + '.txt', "extension : " + extension + '\r\n');
+	    if (handler)
+	    {
+		res.contentType = handler.contentType;
+		handler.handler(fn);
+            }
+	    else
+	    {
+		//fs.writeFile('c:\\out' + gindex + '.txt', 'should not be here\r\n');
+		res.contentType = mimeTypes[extension] || 'text/plain';
+		res.sendFile(fn);
+		res.stop();
+	    }
 	}
 
     // semaphore for locking around accept()
     var USE_FLOCK = true;
     var lock = USE_FLOCK ? function(lockfd) { fs.flock(lockfd, fs.LOCK_EX) } : function(lockfd) { fs.lockf(lockfd, fs.F_LOCK); }
     var unlock = USE_FLOCK ? function(lockfd) { fs.flock(lockfd, fs.LOCK_UN) } : function(lockfd) { fs.lockf(lockfd, fs.F_ULOCK); }
-
+    //var gindex = Math.random();
 	return {
 		requestHandler: null,   // called at start of each request
         endRequest: null,       // called at end of each request
@@ -396,8 +446,9 @@ print(' - FN Does Exist \r\n');
 			return coffee_cache[fn];
 		},
 		run: function(serverSocket, pid) {
-            var logfile = global.logfile;
+			var logfile = global.logfile;
 			HttpChild.onStart && HttpChild.onStart();
+
 			// onStart is a better way for apps to initialize SQL
 			if (Config.mysql) {
 				SQL = new MySQL();
@@ -409,55 +460,73 @@ print(' - FN Does Exist \r\n');
 			var endRequest = HttpChild.endRequest;
 			requestsHandled = 0;
 
-			var lockfd = fs.open(Config.lockFile, fs.O_RDONLY);
+			//var lockfd = fs.open(Config.lockFile, fs.O_RDONLY);
+			sem.openM();
 
-			while (requestsHandled < REQUESTS_PER_CHILD) {
-                lock(lockfd);
+			while (requestsHandled < REQUESTS_PER_CHILD) 
+			{
+				//lock(lockfd);
+				sem.waitM()
 				var sock = net.accept(serverSocket);
-                unlock(lockfd);
+				sem.releaseM();
+				//unlock(lockfd);
 				var keepAlive = true;
-				while (keepAlive) {
-					if (++requestsHandled > REQUESTS_PER_CHILD) {
-						keepAlive = false;
-					}
-                    var rstart = process.rusage();
+				
+				while (keepAlive) 
+				{
+				    if (++requestsHandled > REQUESTS_PER_CHILD)
+				    {
+					keepAlive = false;
+				    }
 
-					try {
-						if (!req.init(sock)) {
-							break;
-						}
-						keepAlive = res.init(sock, keepAlive, requestsHandled);
+				    var rstart = process.rusage();
 
-						// execute a pure JavaScript handler, if provided.
-						if (requestHandler) {
-							requestHandler();
-						}
+				    try 
+				    {
+					if (!req.init(sock)) 
+					{
+						break;
+					}
+					keepAlive = res.init(sock, keepAlive, requestsHandled);
 
-						handleRequest();
+					// execute a pure JavaScript handler, if provided.
+					if (requestHandler) 
+					{
+					    requestHandler();
 					}
-					catch (e) {
-						if (e !== 'RES.STOP') {
-                            errorHandler(e);
-//							Error.exceptionHandler(e);
-						}
+
+					handleRequest();
+				    }
+
+				    catch (e) 
+				    {
+					if (e !== 'RES.STOP') {
+					    errorHandler(e);
+					    // Error.exceptionHandler(e);
 					}
-                    endRequest && endRequest();
-                    req.data = {};
-                    res.data = {};
-					res.flush();
-                    res.reset();
-					// this logfile.write() reduces # requests/sec by 5000!
-                    var elapsed = ('' + (process.rusage().time - rstart.time)).substr(0,8);
-//
-// Here I need to fix the logfile write ALPO
-//
-					//logfile.write(req.remote_addr + ' ' + req.method + ' ' + req.uri + ' completed in ' + elapsed + 's\n');
+				    }
+
+				    endRequest && endRequest();
+
+				    req.data = {};
+				    res.data = {};
+				    res.flush();
+				    res.reset();
+
+				    // this logfile.write() reduces # requests/sec by 5000!
+				    var elapsed = ('' + (process.rusage().time - rstart.time)).substr(0,8);
+				    //
+				    // Here I need to fix the logfile write ALPO
+				    //
+				    //logfile.write(req.remote_addr + ' ' + req.method + ' ' + req.uri + ' completed in ' + elapsed + 's\n');
 				}
+
 				req.close();
 				net.close(sock);
 				v8.gc();
 			}
-			fs.close(lockfd);
+
+			//fs.close(lockfd);
 			res.close();
 		}
 	};

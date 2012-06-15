@@ -41,7 +41,7 @@ static JSVAL net_getSocketDescriptor(JSARGS args) {
 	WSADATA				wsaData = {0};
 
 	WSAStartup(MAKEWORD(2, 2), &wsaData);
-printf("Connect to named pipe and get socket\r\n");
+//printf("Connect to named pipe and get socket\r\n");
 
 	while(1) {
 		/* I open in read mode the namedpipe created by the parent process */
@@ -87,13 +87,14 @@ printf("Connect to named pipe and get socket\r\n");
 	/* I create a new socket with the structure just read */
 	sock_client = WSASocket(AF_INET, SOCK_STREAM, 0, &protInfo, 0, WSA_FLAG_OVERLAPPED);
 
-printf("sock_client : %d\r\n", sock_client);	
+	//printf("sock_client : %d\r\n", sock_client);	
 
 	DWORD dw = GetLastError();
-printf("gsd Last ERRor : %d\r\n", dw);	
+	//printf("gsd Last ERRor : %d\r\n", dw);	
 
 	if ( sock_client == INVALID_SOCKET ) {
-printf("gsd : %d\r\n", __LINE__);
+		printf("gsd : %d\r\n", __LINE__);
+		{ FILE* fp=fopen("c:\\error.txt", "a+b"); fprintf(fp, "%d", __LINE__); fclose(fp); }
 		return Integer::New(-1);
 	}
 
@@ -137,6 +138,7 @@ static JSVAL net_connect (JSARGS args) {
         /* gethostbyname returns NULL on error */
 #ifdef WIN32
 		perror("gethostbyname failed");
+		{ FILE* fp=fopen("c:\\error.txt", "a+b"); fprintf(fp, "%d", __LINE__); fclose(fp); }
 #else
         herror("gethostbyname failed");
 #endif
@@ -160,11 +162,13 @@ static JSVAL net_connect (JSARGS args) {
 
     int fd = socket(AF_INET, SOCK_STREAM, 0);
     if (fd < 0) {
+		{ FILE* fp=fopen("c:\\error.txt", "a+b"); fprintf(fp, "%d", __LINE__); fclose(fp); }
         perror("socket");
         return False();
     }
     if (connect(fd, (struct sockaddr *) &sock_addr, sizeof (struct sockaddr_in)) < 0) {
         /* connect returns -1 on error */
+		{ FILE* fp=fopen("c:\\error.txt", "a+b"); fprintf(fp, "%d", __LINE__); fclose(fp); }
         perror("connect(...) error");
         close(fd);
         return False();
@@ -307,7 +311,7 @@ static JSVAL net_accept (JSARGS args) {
     int sock = args[0]->IntegerValue();
 
     socklen_t sock_size = sizeof (struct sockaddr_in);
-
+	//{ FILE* fp=fopen("c:\\accept.txt", "a+b"); fprintf(fp, "%d\r\n", __LINE__); fclose(fp); }
 #ifdef WIN32
 	int accpt_sock;
 	memset(&their_addr, 0, sizeof(their_addr));
@@ -320,25 +324,39 @@ static JSVAL net_accept (JSARGS args) {
     //	struct timeval timeout;
     //	timeout.tv_sec = 5;
     //	timeout.tv_usec = 0;
-    switch (select(sock + 1, &fds, NULL, NULL, NULL)) {
-        case -1:
-            perror("select");
-            return ThrowException(String::Concat(String::New("Read Error: "), String::New(strerror(errno))));
-        case 0:
-            printf("select timed out\n");
-            return Null();
-    }
+	while(1)
+	{
+		switch (select(sock + 1, &fds, NULL, NULL, NULL)) {
+			case -1:
+				{ FILE* fp=fopen("c:\\error.txt", "a+b"); fprintf(fp, "%d", __LINE__); fclose(fp); }
+				perror("select");
+				return ThrowException(String::Concat(String::New("Read Error: "), String::New(strerror(errno))));
+			case 0:
+				{ FILE* fp=fopen("c:\\error.txt", "a+b"); fprintf(fp, "%d", __LINE__); fclose(fp); }
+				printf("select timed out\n");
+				return Null();
+		}
+		if (FD_ISSET(sock, &fds)) break;
+	}
 
-    while (1) {
+    while (1) 
+	{
         accpt_sock = accept(sock, (struct sockaddr *) &their_addr, &sock_size);
 
 #ifdef WIN32
 		if (accpt_sock == INVALID_SOCKET) {
 			perror("accept failed with error: ");
 			printf("%ld\r\n", WSAGetLastError());
+			{ FILE* fp=fopen("c:\\error.txt", "a+b"); fprintf(fp, "%d", __LINE__); fclose(fp); }
 			//closesocket(sock);
 			//WSACleanup();
-		} else break;
+		} 
+		else 
+		{
+			ULONG NonBlock = 1;
+			ioctlsocket(accpt_sock, FIONBIO, &NonBlock);
+			break;
+		}
 #else
         if (accpt_sock > 0) {
             break;
@@ -521,6 +539,8 @@ static JSVAL net_write (JSARGS args) {
 
     while (size > 0) {
 #ifdef WIN32
+		//{ FILE* fp=fopen("c:\\error.txt", "a+b"); fprintf(fp, "%d[%s]", size, s); fclose(fp); }
+
 		long count = send(fd, s, size, 0);
 #else
         long count = write(fd, s, size);
@@ -624,7 +644,7 @@ static JSVAL net_writebuffer (JSARGS args) {
  * ### Exceptions
  * An exception is thrown if the file cannot be opened or if there is a sendfile(2) OS call error.
  */
-static JSVAL net_sendfile (JSARGS args) {
+ static JSVAL net_sendfile (JSARGS args) {
     HandleScope handle_scope;
     int sock = args[0]->IntegerValue();
     String::AsciiValue filename(args[1]);
@@ -636,17 +656,21 @@ static JSVAL net_sendfile (JSARGS args) {
     if (args.Length() > 3) {
         size = args[3]->IntegerValue();
     }
-    else {
+    else 
+	{
         struct stat buf;
-        if (stat(*filename, &buf)) {
+        if (stat(*filename, &buf)) 
+		{
             printf("%s\n", *filename);
             perror("SendFile stat");
+			{ FILE* fp=fopen("c:\\error.txt", "a+b"); fprintf(fp, "%d", __LINE__); fclose(fp); }
             return handle_scope.Close(False());
         }
         size = buf.st_size - offset;
     }
+
 #ifdef WIN32
-	HANDLE fd = CreateFile(*filename, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+	HANDLE fd = CreateFile(*filename, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_FLAG_SEQUENTIAL_SCAN | FILE_ATTRIBUTE_NORMAL, NULL);
     if (fd == INVALID_HANDLE_VALUE) {
 #else
     int fd = open(*filename, O_RDONLY);
